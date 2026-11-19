@@ -31,7 +31,6 @@ import 'mobile/widgets/deploy_dialog.dart';
 import 'models/platform_model.dart';
 import 'native/font_manager.dart'
     if (dart.library.html) 'web/font_manager.dart';
-
 /// Basic window and launch properties.
 int? kWindowId;
 WindowType? kWindowType;

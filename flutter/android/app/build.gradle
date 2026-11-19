@@ -83,7 +83,7 @@ protobuf {
 
 android {
     namespace "com.rustdesk.app"
-    compileSdkVersion 36
+   compileSdkVersion 36
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
 
