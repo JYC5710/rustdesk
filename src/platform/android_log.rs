@@ -25,8 +25,9 @@ const DEFAULT_LOG_FILE_COUNT: usize = 90;
 // The first bridge request initializes Kotlin's persisted log-folder selection.
 static PUBLIC_LOGS_ENABLED: AtomicBool = AtomicBool::new(true);
 
+// 符号名由 Kotlin 类的全限定名决定，跟 fork 的包名 com.rustdesk.app 绑定。
 #[no_mangle]
-pub extern "system" fn Java_com_carriez_flutter_1hbb_DocumentLogs_setEnabled(
+pub extern "system" fn Java_com_rustdesk_app_DocumentLogs_setEnabled(
     _env: jni::JNIEnv,
     _instance: jni::objects::JObject,
     enabled: jni::sys::jboolean,
