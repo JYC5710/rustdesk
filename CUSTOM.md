@@ -97,6 +97,22 @@ gh workflow run build.yml -R inkss/rustdesk --ref custom-build -f platforms=andr
 
 `.build-config.yml` 控制编译哪些平台，默认精简为 Windows / Linux / Android。
 
+### 5. 连接认证逻辑
+
+被控端未设置固定密码时免认证放行，一次性密码不再作为访问凭证。
+
+| 位置 | 改动 | 作用 |
+| --- | --- | --- |
+| `src/server/connection.rs`（`on_message` 登录分支，`allow_logon_screen_password` 之后） | 新增分支：接受方式为默认（`ApproveMode::Both`）且 `Config::has_permanent_password()` 为 false 时，直接 `send_logon_response_and_keep_alive()` 授权并 `return true`，跳过 CM 确认 | 无固定密码时发起端直接连入 |
+| `src/server/connection.rs`（`lr.password.is_empty()` 分支） | 仅密码模式收到空密码时回 `LOGIN_MSG_PASSWORD_EMPTY`，不再挂到 180s 超时 | 发起端能弹出密码框重试 |
+| `src/client.rs`（`handle_hash`） | 对端 `Hash.salt` 为空（即对端无固定密码）时不弹 `input-password` | 发起端不再做无意义的密码输入 |
+
+语义边界：
+
+- 设置了固定密码 → 仍走原有 `validate_password` / CM 同意两条路径，行为不变；
+- 用户把接受方式显式改为「仅点击同意」或「仅密码」时，新分支不生效（仅 `Both` 时生效）；
+- 2FA、ID 白名单、隐私模式等既有策略仍然生效。
+
 ---
 
 ## 上游合并注意事项
@@ -128,12 +144,13 @@ gh workflow run build.yml -R inkss/rustdesk --ref custom-build -f platforms=andr
    | 对象 | 策略 |
    | --- | --- |
    | `src/common.rs` 编译期注入、Android 包名 `com.rustdesk.app` | 保留本地 |
-   | `README.md` / `CLAUDE.md` | 保留本地 |
+   | `src/server/connection.rs`、`src/client.rs` 的连接认证改动 | 保留本地（见改动清单第 5 条），合并后逐段核对 |
+   | `README.md` / `CLAUDE.md` / `CUSTOM.md` | 保留本地 |
    | `src/lang/*.rs` | 采用上游译文（上游删掉的条目不复活） |
    | `.gitignore` | 合并两侧 |
    | `libs/hbb_common` 子模块 gitlink | 采用上游（前向更新） |
    | `.github/workflows/` | **整体丢弃上游改动**，只保留本地备份集 |
-   | core 其余文件（`connection.rs`、`rendezvous_mediator.rs`、`server.rs`…） | 采用上游 |
+   | core 其余文件（`rendezvous_mediator.rs`、`server.rs`…） | 采用上游 |
 4. **合并后必查的"静默问题"**（git 不报冲突但会导致编译失败）
    - 重复声明：合并结果与上游同版本文件逐段对比。v1.5.0 的 `login.dart` 因上游移动代码块，两份都被留下，报 `already declared in this scope`
    - `vcpkg.json` 升版 → 必须同步 `flutter-build.yml` 的 `VCPKG_COMMIT_ID`（1.5.0 用上游的 2026.07.29 / `9e593bb1`）
@@ -172,3 +189,4 @@ gh workflow run build.yml -R inkss/rustdesk --ref custom-build -f platforms=andr
 | 2026-11-19 | 升级到上游 v1.5.3（113 个冲突文件）：沿用「本地定制保留 + 其余采用上游」。`src/common.rs` 直接取上游后重新施加 6 处定制——除原有 5 处注入外，**新增跳过 `secure_tcp_required`**：上游 1.5.3 在注册/心跳/中继路径启用了强制 key exchange，自建 hbbs 未启用该协议，不跳过会连不上。Android 侧 `MainActivity.kt` / `RdClipboardManager.kt` 及 5 个 `Document*.kt` 整文件对齐上游（仅保留包名 `com.rustdesk.app`）。删除上游已移除的 `res/startwm.sh`、上游新增 workflow（`update-webpki-roots.yml` 等）与本地孤儿测试文件（`src/server/video_qos/tests/*`、`src/audio_resampler/samplerate_tests.rs`、`src/platform/windows/installer_handoff/gate.rs`，上游已无对应 `mod` 声明）。`hbb_common` 子模块、`vcpkg.json`、`VCPKG_COMMIT_ID` 均无变更 |
 | 2026-11-19 | **修复 Android 启动服务弹 `No such method`**：根因不是反诈骗弹窗——上一版把 `MainActivity.kt` 当成本地定制整文件保留，丢了上游对 `DocumentPicker` 的三处接入（`documentPicker.handle(call, result)` / `onResult(...)` / `close()`），Dart 侧 `AndroidDocuments.requireLogFolder()` 在 `toggleService()` 启动服务前调用 `document_require_log_folder`，落到 channel 的 `else -> result.error("-1", "No such method")`，异常在 `requireLogFolder` 的 catch 里被弹成错误框。整文件对齐上游后恢复；同时补回 `dispatchKeyEvent` 修饰键聚焦修复与剪贴板 800KB 上限保护。反诈骗弹窗的触发移除（`server_page.dart` 两处）保持有效 |
 | 2026-11-20 | **修复 Android 启动闪退（v1.5.3）**：`java.lang.UnsatisfiedLinkError: No implementation found for void com.rustdesk.app.DocumentLogs.setEnabled(boolean)`。上游 v1.5.3 给 `DocumentLogs` 加了 `private external fun setEnabled`（在构造函数里调用），Rust 侧对应导出 `Java_com_carriez_flutter_1hbb_DocumentLogs_setEnabled`（`src/platform/android_log.rs`）。fork 把 Kotlin 包名改成 `com.rustdesk.app`，JVM 于是找 `Java_com_rustdesk_app_DocumentLogs_setEnabled`，找不到 → `MainApplication.documentStorage` 懒初始化时抛错 → `MainActivity` 启动即崩。改为 `Java_com_rustdesk_app_DocumentLogs_setEnabled` 后恢复。同时给 `check_android_package.py` 增加 Rust 侧 JNI 符号扫描（`fn Java_*` 里残留 `carriez` / `flutter_1hbb` 即报错），在 prepare 阶段 1 分钟内拦住这类"编译通过、运行闪退"的漏改 |
+| 2026-11-20 | **新增免密直连**：被控端未设置固定密码（且接受方式为默认 `both`）时，发起端直接连入，一次性密码不再作为访问凭证；设置固定密码后仍校验密码或等待手动同意，仅密码模式下收到空密码改为回提示。改动 `src/server/connection.rs` 登录分支与 `src/client.rs` 的 `handle_hash`（对端 `Hash.salt` 为空时不弹密码框）。全平台 CI 通过（run 44711092024），产物覆盖 `inkss/rustdesk-releases` 的 `1.5.3` |
