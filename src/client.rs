@@ -4764,7 +4764,8 @@ pub async fn handle_hash(
 
     let password = if password.is_empty() {
         // login without password, the remote side can click accept
-        if !request_approval {
+        // An empty salt means the peer has no permanent password, so there is nothing to ask for.
+        if !request_approval && !hash.salt.is_empty() {
             interface.msgbox("input-password", "Password Required", "", "");
         }
         Vec::new()

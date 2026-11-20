@@ -3040,6 +3040,20 @@ impl Connection {
                 crate::get_builtin_option(keys::OPTION_ALLOW_LOGON_SCREEN_PASSWORD) == "Y"
                     && is_logon();
 
+            // No permanent password is configured, so there is nothing to authenticate the peer
+            // against: let it in outright. The one-time password is deliberately not a credential
+            // here, and a mode the user picked explicitly still takes precedence.
+            if password::approve_mode() == ApproveMode::Both && !Config::has_permanent_password() {
+                log::info!(
+                    "Accepting peer without authentication: no permanent password (ip: {})",
+                    self.ip
+                );
+                if !self.send_logon_response_and_keep_alive().await {
+                    return false;
+                }
+                self.try_start_cm(lr.my_id, lr.my_name, self.authorized);
+                return true;
+            }
             if (password::approve_mode() == ApproveMode::Click && !allow_logon_screen_password)
                 || password::approve_mode() == ApproveMode::Both && !password::has_valid_password()
             {
@@ -3070,6 +3084,15 @@ impl Connection {
                     {
                         return keep_alive;
                     }
+                }
+                // Password-only mode shows no accept button, so an empty password has to be
+                // answered with a prompt instead of holding the connection until it times out.
+                if password::approve_mode() == ApproveMode::Password
+                    && password::has_valid_password()
+                {
+                    self.send_login_error(crate::client::LOGIN_MSG_PASSWORD_EMPTY)
+                        .await;
+                    return true;
                 }
                 self.try_start_cm(lr.my_id, lr.my_name, false);
             } else {
