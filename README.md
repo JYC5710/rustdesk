@@ -2,7 +2,7 @@
 
 基于 [RustDesk](https://github.com/rustdesk/rustdesk) 的自定义编译版本，编译时内置自定义 ID 服务器配置，自动同步上游新版本。
 
-> 详细的改动说明见 [CUSTOM.md](CUSTOM.md)。
+> 详细的改动说明与维护流程见 [CUSTOM.md](CUSTOM.md)。
 
 ## 连接认证行为
 
