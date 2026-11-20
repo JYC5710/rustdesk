@@ -36,7 +36,7 @@
 | `ANDROID_KEY_PASSWORD` | key 密码 | 可选 |
 | `RELEASE_REPO` | 私有仓库名（如 `inkss/rustdesk-releases`） | 可选 |
 | `RELEASE_PAT` | Fine-grained PAT，对私有仓库有 Contents 读写权限 | 可选 |
-| `SYNC_PAT` | Classic PAT，用于创建 PR（需 `repo` scope） | 可选 |
+| `SYNC_PAT` | Classic PAT（`repo` + `workflow`），用于同步后推送变更并触发编译 | 可选 |
 
 > ID 和 Key 必须同时填写，否则会出现 key 不匹配。都不填则等同于官方客户端。
 >
@@ -48,13 +48,23 @@
 - **手动触发**：Actions → Sync Upstream Release → Run workflow（或直接触发 Build RustDesk）
 - **PR 合并触发**：解决冲突后合并 PR 时，commit 消息包含 `[build]` 即可自动编译
 
+命令行手动触发（`platforms` 可选 `all` / `windows` / `linux` / `android`）：
+
+```bash
+gh workflow run build.yml -R inkss/rustdesk --ref custom-build -f platforms=all
+```
+
 ### 3. 下载产物
 
 从 Releases 页面下载安装包（配置了私有仓库则去私有仓库的 Releases）：
 
-- Windows: MSI + EXE
-- Linux: DEB（x86_64 / aarch64）+ RPM（x86_64）
-- Android: APK（aarch64）
+- Windows：MSI + EXE（x86_64）
+- Linux：DEB（x86_64 / aarch64）、RPM（x86_64 / aarch64）、Arch 包
+- Android：APK（aarch64）
+
+```bash
+gh release download <version> -R inkss/rustdesk-releases -p "rustdesk-<version>-x86_64.deb"
+```
 
 ## 二、编译平台配置
 
@@ -62,15 +72,10 @@
 
 ```yaml
 platforms:
-  windows: true        # Windows x86_64
-  linux: true          # Linux x86_64 + aarch64
-  android: true        # Android aarch64
-  macos: false
-  ios: false
-  windows_sciter: false
-  linux_sciter: false
-  appimage: false
-  flatpak: false
+  windows: true        # Windows x86_64 (MSI + EXE)
+  windows_arm64: false # Windows ARM64（需要 Flutter 3.44）
+  linux: true          # Linux x86_64 + aarch64 (DEB + RPM)
+  android: true        # Android aarch64 (APK)
 ```
 
 ## 三、工作流说明
@@ -78,8 +83,10 @@ platforms:
 | 工作流 | 触发方式 | 功能 |
 | --- | --- | --- |
 | `sync-upstream.yml` | 每天自动 / 手动 | 检查上游新版本，按需合并代码，触发编译 |
-| `build.yml` | tag 推送 / sync 调用 | 获取版本号，编译并发布到 Releases |
+| `build.yml` | tag 推送 / 手动 dispatch / sync 调用 | 获取版本号，编译并发布到 Releases |
 | `flutter-build.yml` | 被 build.yml 调用 | 实际编译逻辑（不直接触发） |
+
+另有 `bridge.yml`（bridge 代码生成）与 `third-party-RustDeskTempTopMostWindow.yml`（Windows 置顶窗口组件）两个辅助工作流，详见 [CUSTOM.md](CUSTOM.md)。
 
 ## 四、上游同步
 
@@ -89,7 +96,7 @@ platforms:
 - 有冲突 → 自动创建 PR，手动解决后合并
 - 已是最新 → 跳过，不触发编译
 
-手动触发时，已有的同版本 Release 会被自动覆盖。
+手动触发且 `platforms=all` 时，会先清理同版本 Release 再重编；只补跑单个平台时保留其他平台已发布的资产。
 
 ## 五、参考内容
 
@@ -146,8 +153,8 @@ GitHub → Settings → Developer settings → Personal access tokens → Fine-g
 | Secret | 用途 | 推荐类型 | 权限 | 必填 |
 | --- | --- | --- | --- | --- |
 | `RELEASE_PAT` | 推送编译产物到私有仓库 | Fine-grained | 选私有仓库 → Contents: `Read and write` | 配置私有仓库时必填 |
-| `REPO_TOKEN` | 上游同步时创建 PR | Classic | 勾选 `repo` scope | 可选（未配置时用 GITHUB_TOKEN） |
+| `SYNC_PAT` | 上游同步时推送变更、创建 PR 并触发编译 | Classic | 勾选 `repo` + `workflow` scope | 可选；未配置时回退 `GITHUB_TOKEN`，但自动触发编译会失效（`REPO_TOKEN` 作为历史 fallback 仍受支持） |
 
 ### 4. rustdesk-api 兼容
 
-本版本兼容 [lejianwen/rustdesk-api](https://github.com/lejianwen/rustdesk-api)，跳过了 `secure_tcp` 握手，登录 API 账户后不会出现连接超时。
+本版本兼容 [lejianwen/rustdesk-api](https://github.com/lejianwen/rustdesk-api)，跳过了 `secure_tcp` 与 `secure_tcp_required` 握手，登录 API 账户后不会出现连接超时。

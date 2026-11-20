@@ -1,6 +1,6 @@
-# RustDesk 自定义编译版 — 维护手册
+# RustDesk 自定义编译版 — 改动记录与维护手册
 
-本文件面向维护者，记录本 fork 相对上游的**全部改动**、**构建发布机制**、**上游同步与版本升级流程**。
+本文件记录本 fork 自 [rustdesk/rustdesk](https://github.com/rustdesk/rustdesk) 的所有自定义改动，并说明构建发布、上游同步与版本升级的维护流程。
 
 - 只想编译或下载安装包 → 看 [README.md](README.md)
 - 想改代码、合并上游、排查 CI → 看本文
