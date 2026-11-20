@@ -9,7 +9,7 @@
 
 ## 目录
 
-1. 概览（定位、术语、快速索引）
+1. 概览
 2. 改动清单（源码、认证、Android、工作流、平台开关）
 3. 构建与发布（触发、流水线、补跑、产物、环境限制）
 4. 上游同步（自动化流程、冲突判定、静默问题）
@@ -21,38 +21,22 @@
 
 ## 1. 概览
 
-### 1.1 项目定位
+编译内置自建 ID / API 服务器配置的 RustDesk 客户端，覆盖 Windows / Linux / Android，跟随上游版本自动同步。
 
-编译内置自建 ID/API 服务器配置的 RustDesk 客户端，覆盖 Windows / Linux / Android，跟随上游版本自动同步。
+**基本信息**
 
-| 项 | 值 |
-| --- | --- |
-| 上游 | [rustdesk/rustdesk](https://github.com/rustdesk/rustdesk) |
-| 长期分支 | `custom-build` |
-| 版本号来源 | 上游 tag（`workflow_dispatch` 时取最新 tag，去掉 `v` 前缀） |
-| 构建 | GitHub Actions，本机不参与 |
-| 产物 | 配置 `RELEASE_REPO` 时发到私有仓库 Releases，否则发到当前仓库 |
+- 上游：[rustdesk/rustdesk](https://github.com/rustdesk/rustdesk)，当前基线 **v1.5.3**
+- 长期分支：`custom-build`
+- 版本号：取上游最新 tag（去掉 `v` 前缀）
+- 构建：GitHub Actions，本机不参与
+- 产物：配置 `RELEASE_REPO` 时发到私有仓库，否则发到当前仓库
 
-### 1.2 术语
+**术语**
 
-| 术语 | 含义 |
-| --- | --- |
-| upstream | 上游仓库 `rustdesk/rustdesk` |
-| hbbs | RustDesk 的 ID / 中继服务器 |
-| bridge | `flutter_rust_bridge` 生成的 Dart ↔ Rust 胶水层，产物为 `src/bridge_generated*.rs` 与 `flutter/lib/generated_bridge.dart`，**被 gitignore，只在 CI 生成** |
-| vcpkg | Windows / Android 的 C/C++ 依赖包管理器，版本由 `VCPKG_COMMIT_ID` 固定 |
-
-### 1.3 快速索引
-
-| 我要…… | 看 |
-| --- | --- |
-| 打一个包 / 发布版本 | [3.1](#31-触发方式) |
-| 只补跑失败平台 | [3.3](#33-补跑与重跑) |
-| 合并上游新版本 | [5](#5-版本升级实操) |
-| 判断某个冲突该保留谁 | [4.2](#42-冲突判定) |
-| 合并后编译失败但没冲突 | [4.3](#43-合并后必查的静默问题) |
-| 排查某次 CI 失败 | [6](#6-排错手册) |
-| 查某天改了什么 | [7](#7-维护记录) |
+- `upstream`：上游仓库
+- `hbbs`：RustDesk 的 ID / 中继服务器
+- `bridge`：`flutter_rust_bridge` 生成的 Dart ↔ Rust 胶水层（`src/bridge_generated*.rs`、`flutter/lib/generated_bridge.dart`），被 gitignore，只在 CI 生成
+- `vcpkg`：Windows / Android 的 C/C++ 依赖管理器，版本由 `VCPKG_COMMIT_ID` 固定
 
 ---
 
