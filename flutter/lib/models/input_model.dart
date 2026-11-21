@@ -2021,10 +2021,15 @@ class InputModel {
     }
   }
 
-  void refreshMousePos() => handleMouse({
-        'buttons': 0,
-        'type': _kMouseEventMove,
-      }, lastMousePos, edgeScroll: useEdgeScroll);
+  void refreshMousePos() {
+    // The first frame arrives before any real pointer event; lastMousePos is
+    // still Offset.zero and would warp the remote cursor to the top-left.
+    if (lastMousePos == Offset.zero) return;
+    handleMouse({
+      'buttons': 0,
+      'type': _kMouseEventMove,
+    }, lastMousePos, edgeScroll: useEdgeScroll);
+  }
 
   void tryMoveEdgeOnExit(Offset pos) => handleMouse(
         {
