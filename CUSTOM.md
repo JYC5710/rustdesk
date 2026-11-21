@@ -118,6 +118,23 @@ platforms:
   flatpak: false
 ```
 
+### 2.6 CM 窗口最小化与无感版（Windows x64）
+
+**普通版**
+
+- CM 窗口启动时不再 `show() + focus()`，改为最小化出现，不抢焦点、不置顶；新连接只调用 `showCmWindow()`，不再 `windowOnTop(null)`。
+- Windows：Flutter 调 Rust `main_show_cm_window_inactive()`，内部用 `SW_SHOWMINNOACTIVE` 显示 CM 的 `FLUTTER_RUNNER_WIN32_WINDOW`，不调用 `SetForegroundWindow`；随后由 `window_manager.setSkipTaskbar(false)` 补任务栏入口。
+- Linux：runner 对 CM 设置 `gtk_window_set_focus_on_map(FALSE)`，不再调用 `gtk_window_present`；Dart 侧在 opacity 0 时 `minimize()`，随后恢复 opacity。
+- macOS 行为保持不变。
+
+**无感版**
+
+- `build.py --ui-invisible` 同时启用 Cargo feature `ui-invisible` 和 Dart `RUSTDESK_UI_INVISIBLE=true`。
+- 效果：无托盘图标；连接时 CM 窗口不显示；聊天/语音主动拉起时仍会显示（这是显式使用功能）；首次安装和手动启动仍可看到主窗口（ID、设置）；认证逻辑不变。
+- 限制：不适用于 `approve-mode=click`（点击审批）。无感版没有 CM 窗口可点 Accept，连接会挂起；部署时应使用默认的免密直连或固定密码。
+- 限制：无感版与普通版同 app name/版本，自动更新可能把无感版覆盖成普通版；部署时建议关闭自动更新或固定使用 `-ui-invisible` 资产。
+- 仅 Windows x64 产出；同一 app name/版本，MSI 已启用 `AllowSameVersionUpgrades`，可与普通版互相覆盖安装。
+
 ---
 
 ## 3. 构建与发布
@@ -167,7 +184,8 @@ gh run rerun <run-id> -R inkss/rustdesk --failed
 ### 3.4 产物与发布
 
 - Release tag 与版本号同名（如 `1.5.3`），**同名资产直接覆盖**，不保留历史构建。
-- 典型资产：`rustdesk-<ver>-x86_64.msi/.exe`、`rustdesk-<ver>-x86_64/-aarch64.deb`、`rustdesk-<ver>-0.x86_64/-aarch64.rpm`、`rustdesk-<ver>-aarch64.apk`、Arch 包。
+- 典型资产：`rustdesk-<ver>-x86_64.msi/.exe`、`rustdesk-<ver>-x86_64-ui-invisible.msi/.exe`、`rustdesk-<ver>-x86_64/-aarch64.deb`、`rustdesk-<ver>-0.x86_64/-aarch64.rpm`、`rustdesk-<ver>-aarch64.apk`、Arch 包。
+- `windows_flutter_matrix` 固定包含两个 x64 job：普通版与 `-ui-invisible` 无感版；无感版不构建 ARM64，也不影响其他平台。
 - 配置了 `RELEASE_REPO` 时，「清理旧 Release」只作用于**当前公开仓库**（`GITHUB_TOKEN` 的权限范围）；发布仓库既不删旧 release 也不改 `publishedAt`，靠同名资产覆盖。
 
 ```bash
@@ -335,3 +353,4 @@ gh release view <version> -R inkss/rustdesk-releases --json assets --jq '.assets
 | 2026-10-30 | 升级 v1.5.1（PR #8，163 冲突文件）：删除三处静默重复，子模块前移 fae47e02；Windows/Linux 成功，Android 失败（见下）<br>Android 失败：上游新增 5 个 Document*.kt 的 package 仍为 com.carriez.flutter_hbb，改为 com.rustdesk.app 后通过<br>编译反馈优化：dispatch 增加 platforms 入参、旧 Release 仅在 all 时清理、concurrency 分组细化、Linux 补 rust-cache、prepare 增加 Kotlin 包名检查 |
 | 2026-11-19 | 升级 v1.5.3（113 冲突文件）：src/common.rs 重新施加 6 处定制（新增跳过 secure_tcp_required，否则自建 hbbs 连不上）；Android Kotlin 整文件对齐上游、仅保留包名；删除上游已移除文件与本地孤儿测试<br>Android 启动服务弹 No such method：整文件保留 MainActivity.kt 丢了上游 DocumentPicker 三处接入，document_require_log_folder 落到 else 分支；对齐上游后恢复 |
 | 2026-11-20 | Android 启动闪退：DocumentLogs.setEnabled 的 JNI 符号仍带 carriez，包名改为 com.rustdesk.app 后 JVM 找不到；改正符号并给 check_android_package.py 增加 Rust 侧 JNI 扫描<br>新增免密直连：被控端未设固定密码时直接放行（一次性密码不再作凭证），设密码后仍校验或等待同意；改动 connection.rs 与 client.rs |
+| 2026-11-21 | CM 窗口改为启动即最小化、不抢焦点：Windows 新增 `main_show_cm_window_inactive`（`SW_SHOWMINNOACTIVE`），Linux runner 对 CM 设置 `focus_on_map(FALSE)`，Dart 新连接不再 `windowOnTop`；去掉 CM 启动的 alwaysOnTop（macOS 保持原样）<br>新增 Windows x64 无感版构建：`build.py --ui-invisible`（Cargo feature + Dart define），无托盘、CM 永不显示、主窗口仍可手动打开；CI 增加 `-ui-invisible` 的 MSI/EXE，同 app name/版本可互相覆盖 |

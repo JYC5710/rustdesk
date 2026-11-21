@@ -26,6 +26,9 @@ use_samplerate = ["samplerate", "libsamplerate-sys"]
 use_rubato = ["rubato"]
 use_dasp = ["dasp"]
 flutter = ["flutter_rust_bridge"]
+# Windows x64-only flavor: suppress the tray icon. Dart uses the matching
+# RUSTDESK_UI_INVISIBLE define to keep the CM window hidden.
+ui-invisible = []
 default = ["use_dasp"]
 hwcodec = ["scrap/hwcodec"]
 vram = ["scrap/vram"]

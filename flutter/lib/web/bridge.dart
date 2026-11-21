@@ -1674,6 +1674,10 @@ class RustdeskImpl {
     throw UnimplementedError("mainHideDock");
   }
 
+  bool mainShowCmWindowInactive({dynamic hint}) {
+    return false;
+  }
+
   bool mainHasFileClipboard({dynamic hint}) {
     return false;
   }

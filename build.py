@@ -135,6 +135,11 @@ def make_parser():
         help='Build windows portable'
     )
     parser.add_argument(
+        '--ui-invisible',
+        action='store_true',
+        help='Windows only: no tray icon and no CM window; the main window stays available'
+    )
+    parser.add_argument(
         '--unix-file-copy-paste',
         action='store_true',
         help='Build with unix file copy paste feature'
@@ -322,6 +327,10 @@ def get_features(args):
         features.append('flutter')
     if args.unix_file_copy_paste:
         features.append('unix-file-copy-paste')
+    if args.ui_invisible:
+        if not windows:
+            raise Exception('--ui-invisible is Windows only')
+        features.append('ui-invisible')
     if args.drm:
         # Say so rather than quietly handing back a stock build: the backend is Linux-only, so on
         # any other host the flag cannot be honoured and the resulting binary would look like a
@@ -966,14 +975,15 @@ def build_flutter_arch_manjaro(version, features):
     system2('HBB=`pwd`/.. FLUTTER=1 makepkg -f')
 
 
-def build_flutter_windows(version, features, skip_portable_pack):
+def build_flutter_windows(version, features, skip_portable_pack, ui_invisible=False):
     if not skip_cargo:
         system2(f'cargo build --locked --features {features} --lib --release')
         if not os.path.exists("target/release/librustdesk.dll"):
             print("cargo build failed, please check rust source code.")
             exit(-1)
     os.chdir('flutter')
-    system2('flutter build windows --release')
+    dart_define = ' --dart-define=RUSTDESK_UI_INVISIBLE=true' if ui_invisible else ''
+    system2(f'flutter build windows --release{dart_define}')
     os.chdir('..')
     shutil.copy2('target/release/deps/dylib_virtual_display.dll',
                  flutter_build_dir_2)
@@ -1041,7 +1051,8 @@ def main():
         os.chdir('../../..')
 
         if flutter:
-            build_flutter_windows(version, features, args.skip_portable_pack)
+            build_flutter_windows(
+                version, features, args.skip_portable_pack, args.ui_invisible)
             return
         system2('cargo build --locked --release --features ' + features)
         # system2('upx.exe target/release/rustdesk.exe')

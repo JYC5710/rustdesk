@@ -37,6 +37,10 @@ WindowType? kWindowType;
 late List<String> kBootArgs;
 bool _cjkFontLoaded = false;
 
+/// Built by `build.py --ui-invisible`: no tray icon and the CM window never
+/// shows. The main window is still available when launched explicitly.
+const bool kUiInvisible = bool.fromEnvironment('RUSTDESK_UI_INVISIBLE');
+
 Future<void> main(List<String> args) async {
   earlyAssert();
   WidgetsFlutterBinding.ensureInitialized();
@@ -295,7 +299,8 @@ void runConnectionManagerScreen() async {
     const DesktopServerPage(),
     MyTheme.currentThemeMode(),
   );
-  final hide = await bind.cmGetConfig(name: "hide_cm") == 'true';
+  final hide =
+      kUiInvisible || await bind.cmGetConfig(name: "hide_cm") == 'true';
   gFFI.serverModel.hideCm = hide;
   if (hide) {
     await hideCmWindow(isStartup: true);
@@ -312,31 +317,105 @@ bool _isCmReadyToShow = false;
 showCmWindow({bool isStartup = false}) async {
   if (isStartup) {
     WindowOptions windowOptions = getHiddenTitleBarWindowOptions(
-        size: kConnectionManagerWindowSizeClosedChat, alwaysOnTop: true);
+        size: kConnectionManagerWindowSizeClosedChat,
+        alwaysOnTop: isMacOS ? true : null);
     await windowManager.waitUntilReadyToShow(windowOptions, null);
     bind.mainHideDock();
-    await Future.wait([
-      windowManager.show(),
-      windowManager.focus(),
-      windowManager.setOpacity(1)
-    ]);
-    // ensure initial window size to be changed
-    await windowManager.setSizeAlignment(
-        kConnectionManagerWindowSizeClosedChat, Alignment.topRight);
-    _isCmReadyToShow = true;
-  } else if (_isCmReadyToShow) {
-    if (await windowManager.getOpacity() != 1) {
-      await windowManager.setOpacity(1);
-      await windowManager.focus();
-      await windowManager.minimize(); //needed
+    if (isMacOS) {
+      await Future.wait([
+        windowManager.show(),
+        windowManager.focus(),
+        windowManager.setOpacity(1)
+      ]);
+      // ensure initial window size to be changed
       await windowManager.setSizeAlignment(
           kConnectionManagerWindowSizeClosedChat, Alignment.topRight);
-      windowOnTop(null);
+    } else if (isWindows) {
+      await windowManager.setOpacity(1);
+      // Position the hidden window before showing it minimized, so it appears
+      // at the saved top-right frame.
+      await windowManager.setSizeAlignment(
+          kConnectionManagerWindowSizeClosedChat, Alignment.topRight);
+      await _showCmWindowMinimized(force: true);
+    } else {
+      // Move the still-transparent window first, then minimize and reveal it,
+      // so neither the move nor the opacity change is ever visible.
+      await windowManager.setSizeAlignment(
+          kConnectionManagerWindowSizeClosedChat, Alignment.topRight);
+      await _showCmWindowMinimized(force: true);
+    }
+    _isCmReadyToShow = true;
+  } else if (_isCmReadyToShow) {
+    if (isMacOS) {
+      if (await windowManager.getOpacity() != 1) {
+        await windowManager.setOpacity(1);
+        await windowManager.focus();
+        await windowManager.minimize(); //needed
+        await windowManager.setSizeAlignment(
+            kConnectionManagerWindowSizeClosedChat, Alignment.topRight);
+        windowOnTop(null);
+      }
+    } else {
+      await _showCmWindowMinimized();
     }
   }
 }
 
+/// Show the CM window minimized without taking focus.
+///
+/// Windows uses `SW_SHOWMINNOACTIVE` through Rust: `window_manager.show()`
+/// calls `SetForegroundWindow`, which would still steal focus for a moment.
+/// Linux only needs `gtk_window_iconify`; the runner sets focus-on-map to false
+/// for the CM window so the initial transparent map stays unfocused.
+Future<void> _showCmWindowMinimized({bool force = false}) async {
+  if (!isDesktop || isMacOS) {
+    return;
+  }
+  final visible = await windowManager.isVisible();
+  if (!force && visible) {
+    if (await windowManager.isMinimized()) {
+      return;
+    }
+    if (await windowManager.getOpacity() == 1) {
+      // The user restored the window; leave it where it is.
+      return;
+    }
+  }
+  if (isWindows) {
+    await windowManager.setOpacity(1);
+    if (bind.mainShowCmWindowInactive()) {
+      // The runner removes the CM window from the taskbar at creation. Add it
+      // back so the minimized window can be restored by the user.
+      try {
+        await windowManager.setSkipTaskbar(false);
+      } catch (e) {
+        debugPrint('Failed to restore CM taskbar entry: $e');
+      }
+      return;
+    }
+    if (!visible) {
+      await windowManager.show();
+    }
+    await windowManager.minimize();
+    return;
+  }
+  if (!visible) {
+    await windowManager.show();
+  }
+  await windowManager.minimize();
+  await windowManager.setOpacity(1);
+}
+
 hideCmWindow({bool isStartup = false}) async {
+  if (kUiInvisible) {
+    // Do not run waitUntilReadyToShow: it sizes the window and may add a
+    // taskbar entry before we can hide it. hide() is enough to remove the
+    // taskbar button, and avoids touching taskbar_ before it is initialized.
+    await windowManager.setOpacity(0);
+    await windowManager.hide();
+    _isCmReadyToShow = true;
+    return;
+  }
   if (isStartup) {
     WindowOptions windowOptions = getHiddenTitleBarWindowOptions(
         size: kConnectionManagerWindowSizeClosedChat);

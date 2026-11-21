@@ -61,6 +61,7 @@ env:
 
     **平台支持：**
     - Windows: x86_64 (MSI + EXE) / ARM64 (MSI + EXE)
+    - Windows x86_64 额外提供 `-ui-invisible` 无感版（无托盘、被控窗口不显示；首次安装/手动启动仍可打开主窗口）
     - Linux: x86_64 + aarch64 (DEB + RPM + Arch)
     - Android: aarch64 (APK)
 
@@ -106,6 +107,15 @@ jobs:
                   'flutter-arch': 'x64',
                   'vcpkg-triplet': 'x64-windows-static',
                   'build-args': '--vram',
+                  'suffix': '',
+              }, {
+                  'target': 'x86_64-pc-windows-msvc',
+                  'os': 'windows-2022',
+                  'arch': 'x86_64',
+                  'flutter-arch': 'x64',
+                  'vcpkg-triplet': 'x64-windows-static',
+                  'build-args': '--vram --ui-invisible',
+                  'suffix': '-ui-invisible',
               }]
               if str(p_raw.get('windows_arm64', False)).lower() == 'true':
                   topmost_jobs.append({'target': 'windows-11-arm', 'platform': 'ARM64'})
@@ -116,6 +126,7 @@ jobs:
                       'flutter-arch': 'arm64',
                       'vcpkg-triplet': 'arm64-windows-static',
                       'build-args': '',
+                      'suffix': '',
                   })
               f.write(f'windows_matrix={json.dumps(topmost_jobs)}\n')
               f.write(f'windows_flutter_matrix={json.dumps(flutter_jobs)}\n')
@@ -126,7 +137,7 @@ jobs:
             echo "linux=true" >> $GITHUB_OUTPUT
             echo "android=true" >> $GITHUB_OUTPUT
             echo 'windows_matrix=[{"target":"windows-2022","platform":"x64"}]' >> $GITHUB_OUTPUT
-            echo 'windows_flutter_matrix=[{"target":"x86_64-pc-windows-msvc","os":"windows-2022","arch":"x86_64","flutter-arch":"x64","vcpkg-triplet":"x64-windows-static","build-args":"--vram"}]' >> $GITHUB_OUTPUT
+            echo 'windows_flutter_matrix=[{"target":"x86_64-pc-windows-msvc","os":"windows-2022","arch":"x86_64","flutter-arch":"x64","vcpkg-triplet":"x64-windows-static","build-args":"--vram","suffix":""},{"target":"x86_64-pc-windows-msvc","os":"windows-2022","arch":"x86_64","flutter-arch":"x64","vcpkg-triplet":"x64-windows-static","build-args":"--vram --ui-invisible","suffix":"-ui-invisible"}]' >> $GITHUB_OUTPUT
           fi
           cat $GITHUB_OUTPUT
 
@@ -151,7 +162,7 @@ jobs:
       target_version: Windows10
 
   build-for-windows-flutter:
-    name: ${{ matrix.job.target }}
+    name: ${{ matrix.job.target }}${{ matrix.job.suffix }}
     needs: [build-RustDeskTempTopMostWindow, generate-bridge, read-config]
     if: needs.read-config.outputs.windows == 'true'
     runs-on: ${{ matrix.job.os }}
@@ -348,7 +359,7 @@ jobs:
           python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/rustdesk.exe
           popd
           mkdir -p ./SignOutput
-          mv ./target/release/rustdesk-portable-packer.exe ./SignOutput/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.exe
+          mv ./target/release/rustdesk-portable-packer.exe ./SignOutput/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.exe
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce # v2
@@ -363,7 +374,7 @@ jobs:
           $msiPlatform = if ('${{ matrix.job.arch }}' -eq 'aarch64') { 'ARM64' } else { 'x64' }
           msbuild msi.sln -p:Configuration=Release -p:Platform=$msiPlatform /p:TargetVersion=Windows10
           $msi = Get-ChildItem ./Package/bin/*/Release/en-us/Package.msi | Select-Object -First 1
-          mv $msi.FullName ../../SignOutput/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.msi
+          mv $msi.FullName ../../SignOutput/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}${{ matrix.job.suffix }}.msi
           sha256sum ../../SignOutput/rustdesk-*.msi
 
       - name: Sign rustdesk self-extracted file

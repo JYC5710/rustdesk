@@ -4431,6 +4431,52 @@ pub fn try_set_window_foreground(window: HWND) {
     }
 }
 
+/// Show the connection-manager window minimized without activating it.
+///
+/// The CM window is created hidden (`CreateWindow` without `WS_VISIBLE`) and
+/// `window_manager.show()` would call `SetForegroundWindow`, which makes the
+/// incoming connection steal focus. `SW_SHOWMINNOACTIVE` maps the same
+/// top-level window as a minimized taskbar button and leaves the foreground
+/// window untouched.
+pub fn show_cm_window_inactive() -> bool {
+    struct Context {
+        process_id: DWORD,
+        hwnd: HWND,
+    }
+
+    unsafe extern "system" fn enum_window(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let context = &mut *(lparam as *mut Context);
+        let mut process_id = 0;
+        GetWindowThreadProcessId(hwnd, &mut process_id);
+        if process_id != context.process_id {
+            return TRUE;
+        }
+        let mut class_name = [0u16; 64];
+        let len = GetClassNameW(hwnd, class_name.as_mut_ptr(), class_name.len() as i32);
+        if len > 0
+            && String::from_utf16_lossy(&class_name[..len as usize])
+                == FLUTTER_RUNNER_WIN32_WINDOW_CLASS
+        {
+            context.hwnd = hwnd;
+            return FALSE;
+        }
+        TRUE
+    }
+
+    let mut context = Context {
+        process_id: unsafe { GetCurrentProcessId() },
+        hwnd: null_mut(),
+    };
+    unsafe {
+        EnumWindows(Some(enum_window), &mut context as *mut _ as LPARAM);
+        if context.hwnd.is_null() {
+            return false;
+        }
+        ShowWindow(context.hwnd, SW_SHOWMINNOACTIVE);
+    }
+    true
+}
+
 pub mod reg_display_settings {
     use hbb_common::ResultType;
     use serde_derive::{Deserialize, Serialize};

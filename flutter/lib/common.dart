@@ -753,6 +753,12 @@ Future<void> windowOnTop(int? id) async {
   print("Bring window '$id' on top");
   if (id == null) {
     // main window
+    if (desktopType == DesktopType.cm &&
+        await windowManager.getOpacity() == 0) {
+      // A hidden CM window is normally left fully transparent; chat/voice
+      // still expects a visible window when it deliberately brings it up.
+      await windowManager.setOpacity(1);
+    }
     if (stateGlobal.isMinimized) {
       await windowManager.restore();
     }

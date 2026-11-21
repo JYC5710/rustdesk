@@ -159,6 +159,11 @@ static void my_application_activate(GApplication* application) {
   gtk_window_set_default_size(window, width, height);   // <-- comment this line
   // gtk_widget_show(GTK_WIDGET(window));
   gtk_widget_set_opacity(GTK_WIDGET(window), 0);
+  if (gIsConnectionManager) {
+    // Dart starts the CM window minimized. Keep the initial transparent map
+    // from taking focus before that happens.
+    gtk_window_set_focus_on_map(GTK_WINDOW(window), FALSE);
+  }
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(project, self->dart_entrypoint_arguments);

@@ -2513,6 +2513,14 @@ pub fn main_hide_dock() -> SyncReturn<bool> {
     SyncReturn(true)
 }
 
+pub fn main_show_cm_window_inactive() -> SyncReturn<bool> {
+    #[cfg(target_os = "windows")]
+    let ret = crate::platform::windows::show_cm_window_inactive();
+    #[cfg(not(target_os = "windows"))]
+    let ret = false;
+    SyncReturn(ret)
+}
+
 pub fn main_has_file_clipboard() -> SyncReturn<bool> {
     let ret = cfg!(any(target_os = "windows", feature = "unix-file-copy-paste",));
     SyncReturn(ret)
