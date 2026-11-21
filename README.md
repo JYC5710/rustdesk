@@ -7,23 +7,21 @@
 ## 项目定位
 
 - **只在 GitHub Actions 编译**：不提供本地编译流程，也不承诺与上游一致的开发/调试体验。
-- **服务器配置内置且不可见**：编译时通过 Secrets 注入 `RENDEZVOUS_SERVER`、`RS_PUB_KEY`，可选注入 `API_SERVER`；客户端不提供切换/查看服务器配置的入口。
+- **服务器配置内置且默认隐藏**：编译时通过 Secrets 注入 `RENDEZVOUS_SERVER`、`RS_PUB_KEY`，可选注入 `API_SERVER`；客户端默认不展示服务器设置入口。
 - **产物私有发布**：默认发布到独立的私有 Release 仓库，避免公开泄露 ID 服务器信息。
-- **双形态**：普通版保留完整窗口与托盘；Windows x64 额外提供 `-ui-invisible` 无感版。
+- **Windows 两种形态**：普通版保留完整窗口与托盘；Windows x64 额外提供 `-ui-invisible` 无感版。Linux / Android 只提供普通形态。
 - 本项目是个人/团队自用的定制分支，**与 RustDesk 官方无关**，不提供官方支持。
 
 ## 与上游版本的主要差异
 
 | 维度 | 本版本 | 上游 |
 | --- | --- | --- |
-| ID/API 服务器 | 编译时内置，客户端不可见、不可切换 | 默认官方服务器，可在设置中修改 |
+| ID/API 服务器 | 编译时内置，客户端默认隐藏设置入口 | 默认官方服务器，可在设置中修改 |
 | 连接认证 | 未设固定密码时免密直连；设密码后校验 | 默认需要密码或点击同意 |
 | CM 窗口 | 启动即最小化，不抢焦点、不置顶；用户可从任务栏恢复 | 连接时弹出并置顶，3 秒后最小化 |
-| 无感版 | Windows x64 提供 `-ui-invisible`：无托盘、连接不显示 CM 窗口 | 无此形态 |
-| 首帧鼠标同步 | 跳过初始 `(0,0)`，不会把远端光标拉到左上角 | 首帧可能把远端光标定位到左上角 |
-| 其他 | 跳过 `secure_tcp` 以兼容 rustdesk-api；Android 包名等定制 | 原生行为 |
+| Windows x64 无感版 | 提供 `-ui-invisible`：无托盘、连接不显示 CM 窗口 | 无此形态 |
 
-更细的改动与回归记录见 [CUSTOM.md](CUSTOM.md)。
+其他编译/兼容性定制（如 `secure_tcp`、Android 包名等）见 [CUSTOM.md](CUSTOM.md)。
 
 ## 连接认证行为
 
@@ -63,9 +61,19 @@
 - 普通版：`rustdesk-<version>-x86_64.msi` / `.exe`
 - 无感版：`rustdesk-<version>-x86_64-ui-invisible.msi` / `.exe`
 
-## 构建与发布
+## 从克隆到编译
 
-### 1. 配置 GitHub Secrets
+### 1. Fork / 克隆仓库
+
+Fork 本仓库后，基于长期分支 `custom-build` 工作：
+
+```bash
+git clone https://github.com/<your-account>/rustdesk.git
+cd rustdesk
+git checkout custom-build
+```
+
+### 2. 配置 GitHub Secrets
 
 在仓库 **Settings → Secrets and variables → actions → Repository secrets** 中添加：
 
@@ -86,7 +94,23 @@
 >
 > 未配置私有仓库时，产物发布到当前仓库的 Releases。
 
-### 2. 触发编译
+### 3. 修改内置配置
+
+- **ID / API 服务器**：只改 Secrets，不要改代码。`RENDEZVOUS_SERVER`、`RS_PUB_KEY`、`API_SERVER` 会在编译时通过 `option_env!` 写入二进制（见 `src/common.rs`），改完后重新触发编译即可。
+- **服务器设置入口是否隐藏**：本仓库的发布配置默认隐藏；基于本仓库 fork 时保留现有构建配置即可。若自行生成 custom client，需要在 built-in options 中设置 `hide-server-settings=Y`，并沿用仓库的签名/配置流程，详见 [CUSTOM.md](CUSTOM.md)。
+- **编译哪些平台**：编辑 `.build-config.yml`。
+
+```yaml
+platforms:
+  windows: true        # Windows x86_64（普通版 + 无感版，MSI + EXE）
+  windows_arm64: false # Windows ARM64（需要 Flutter 3.44；无感版不构建 ARM64）
+  linux: true          # Linux x86_64 + aarch64（DEB + RPM）
+  android: true        # Android aarch64（APK）
+```
+
+- **品牌/包名/签名/私有发布仓库**：分别通过 custom client 配置、Android Secrets、`RELEASE_REPO` / `RELEASE_PAT` 调整，详见 [CUSTOM.md](CUSTOM.md)。
+
+### 4. 触发编译
 
 - **自动触发**：每天 UTC 03:23（北京时间 11:23）检查上游新版本，有更新则自动合并并编译。
 - **手动触发**：Actions → Sync Upstream Release → Run workflow（或直接触发 Build RustDesk）。
@@ -104,7 +128,7 @@ gh workflow run build.yml -R inkss/rustdesk --ref custom-build -f platforms=all
 gh workflow run build.yml -R inkss/rustdesk --ref custom-build -f platforms=windows
 ```
 
-### 3. 下载产物
+### 5. 下载产物
 
 从 Releases 页面下载安装包（配置了私有仓库则去私有仓库的 Releases）：
 
@@ -116,19 +140,7 @@ gh workflow run build.yml -R inkss/rustdesk --ref custom-build -f platforms=wind
 gh release download <version> -R inkss/rustdesk-releases -p "rustdesk-<version>-x86_64.deb"
 ```
 
-## 编译平台配置
-
-编辑 `.build-config.yml` 控制编译哪些平台：
-
-```yaml
-platforms:
-  windows: true        # Windows x86_64（普通版 + 无感版，MSI + EXE）
-  windows_arm64: false # Windows ARM64（需要 Flutter 3.44；无感版不构建 ARM64）
-  linux: true          # Linux x86_64 + aarch64（DEB + RPM）
-  android: true        # Android aarch64（APK）
-```
-
-## 工作流说明
+## 工作流与上游同步
 
 | 工作流 | 触发方式 | 功能 |
 | --- | --- | --- |
@@ -138,7 +150,7 @@ platforms:
 
 另有 `bridge.yml`（bridge 代码生成）与 `third-party-RustDeskTempTopMostWindow.yml`（Windows 置顶窗口组件）两个辅助工作流，详见 [CUSTOM.md](CUSTOM.md)。
 
-## 上游同步与 PR 评审
+### 上游发版处理
 
 每天自动检查上游仓库（[rustdesk/rustdesk](https://github.com/rustdesk/rustdesk)）的新版本：
 
@@ -154,6 +166,8 @@ platforms:
 - 合并 commit 带 `[build]` 才会触发编译。
 
 本仓库的实际 PR 评审与合并**由 AI 执行**，但流程仍然是“先评审、后合并”，不会无条件跟随上游。
+
+> 手动触发且 `platforms=all` 时会先清理同版本 Release 再重编；只补跑单个平台时保留其他平台已发布的资产。
 
 ## 参考内容
 
