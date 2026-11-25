@@ -1,0 +1,122 @@
+name: Build RustDesk
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+'
+  pull_request:
+    types: [closed]
+    branches: [custom-build]
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: 只编译指定平台（all = 按 .build-config.yml 的开关）
+        type: choice
+        options:
+          - all
+          - windows
+          - linux
+          - android
+        default: all
+
+concurrency:
+  group: build-${{ github.ref }}-${{ github.event_name }}-${{ inputs.platforms || 'auto' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version || '' }}
+      skip: ${{ steps.should_build.outputs.skip || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if build requested
+        id: should_build
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # PR 合并：检查是否已合并且 commit 消息包含 [build]
+            if [ "${{ github.event.pull_request.merged }}" != "true" ]; then
+              echo "⏭️ PR closed without merge, skipping"
+              echo "skip=true" >> $GITHUB_OUTPUT
+            else
+              MSG=$(git log -1 --pretty=%B)
+              if echo "$MSG" | grep -q '\[build\]'; then
+                echo "✅ Build requested via [build] tag in PR merge commit"
+              else
+                echo "⏭️ No [build] tag in merge commit message, skipping"
+                echo "skip=true" >> $GITHUB_OUTPUT
+              fi
+            fi
+          fi
+
+      - name: Add upstream remote
+        if: steps.should_build.outputs.skip != 'true' && github.event_name == 'workflow_dispatch'
+        run: |
+          git remote add upstream https://github.com/rustdesk/rustdesk.git 2>/dev/null || true
+          git fetch upstream --tags --force
+
+      - name: Resolve version
+        if: steps.should_build.outputs.skip != 'true'
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            # tag push：直接用 tag 名，去掉 v 前缀
+            RAW="${{ github.ref_name }}"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            # PR 合并：从分支名解析版本（upstream-merge-$VERSION）
+            HEAD_REF="${{ github.event.pull_request.head.ref }}"
+            RAW="${HEAD_REF#upstream-merge-}"
+          else
+            # workflow_dispatch：从上游获取最新版本
+            RAW=$(git tag -l '[0-9]*.[0-9]*.[0-9]*' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          fi
+
+          VERSION="${RAW#v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Cannot resolve version (raw: $RAW)"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📌 Resolved version: $VERSION"
+
+      # 上游新增的 Kotlin 文件常漏改包名：目录已随 fork 重命名为 com/rustdesk/app，
+      # package 声明仍是 com.carriez.flutter_hbb，要到 Rust 交叉编译约 40 分钟后
+      # 才在 gradle 阶段报错。这里提前扫描，把失败暴露时间压到 1 分钟内。
+      # 必须放在「Clean existing release」之前，避免检查失败时先删掉已发布资产。
+      - name: Preflight 检查（Android 包名残留）
+        if: steps.should_build.outputs.skip != 'true'
+        run: python3 .github/scripts/check_android_package.py
+
+      # 只在全平台编译时清理 Release；补跑单个平台时必须保留其他平台已发布的资产
+      - name: Clean existing release
+        if: steps.should_build.outputs.skip != 'true' && github.event_name == 'workflow_dispatch' && (inputs.platforms == 'all' || inputs.platforms == '')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.resolve.outputs.version }}"
+          echo "🧹 Cleaning existing release/tag for $VERSION..."
+
+          gh release delete "$VERSION" --yes 2>/dev/null || true
+          git tag -d "$VERSION" 2>/dev/null || true
+          git push origin ":refs/tags/$VERSION" 2>/dev/null || true
+
+          echo "✅ Cleanup done"
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.skip != 'true'
+    uses: ./.github/workflows/flutter-build.yml
+    secrets: inherit
+    with:
+      publish-release: true
+      upload-tag: ${{ needs.prepare.outputs.version }}
+      platforms: ${{ inputs.platforms || 'all' }}
